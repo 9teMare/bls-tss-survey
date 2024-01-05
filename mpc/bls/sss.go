@@ -17,7 +17,7 @@ type SSS struct {
 }
 
 var (
-	c = math.Curves[1]
+	c = math.Curves[3]
 )
 
 type Polynomial []*math.Zr

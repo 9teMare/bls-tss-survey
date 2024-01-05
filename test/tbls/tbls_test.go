@@ -13,10 +13,9 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,9 +122,17 @@ func TestBenchmark(t *testing.T) {
 	var stopFuncs []func()
 
 	n := 3
+	threshold := int(math.Floor(float64(n/2)) + 1)
+
+	t.Logf(">>>> n = %d, t = %d", n, threshold)
 
 	members, certPool, loggers, signers, listeners, commParties, membershipFunc, parties, kgf := setup(t, n, loggers, signers, listeners, commParties)
 
+	for _, l := range loggers {
+		l.mute()
+	}
+
+	// Create Party
 	for id := 1; id <= n; id++ {
 		stop, s := createParty(id, kgf, signers[id-1], n, certPool, listeners, loggers, commParties, membershipFunc)
 		parties = append(parties, s)
@@ -138,101 +145,186 @@ func TestBenchmark(t *testing.T) {
 		}
 	}()
 
+	// DKG
 	shares, start := keygen(t, parties, n)
 
 	elapsed := time.Since(start)
-	t.Log("DKG elapsed", elapsed)
+	t.Log(">>>> DKG took", elapsed)
 
-	// Create the threshold signers.
-	thresholdSigners := make([]*bls.TBLS, n)
-	for id := 1; id <= n; id++ {
-		thresholdSigners[id-1] = &bls.TBLS{
-			Logger: logger(id, t.Name()),
-			Party:  uint16(id),
-		}
+	//// Create the threshold signers.
+	//thresholdSigners := make([]*bls.TBLS, threshold)
+	//for id := 1; id <= threshold; id++ {
+	//	thresholdSigners[id-1] = &bls.TBLS{
+	//		Logger: logger(id, t.Name()),
+	//		Party:  uint16(id),
+	//	}
+	//}
+	//
+	//// Initialize them with a nil send function
+	//for i, signer := range thresholdSigners {
+	//	signer.Init(members, threshold, nil)
+	//	err := signer.SetShareData(shares[i])
+	//	if err != nil {
+	//		return
+	//	}
+	//}
+	//
+	//// Sign a message
+	//msg := []byte("Three can keep a secret, if two of them are dead.")
+	//digest := sha256Digest(msg)
+	//
+	//signatures := make([][]byte, threshold)
+	//signerIndices := make([]uint16, threshold)
+	//
+	////workload := uint32(10000)
+	//
+	//var wg sync.WaitGroup
+	////var mu sync.Mutex
+	//
+	//wg.Add(threshold)
+	//
+	////totalTime := time.Duration(0)
+	//
+	//signStartTime := time.Now()
+	//
+	////for worker := 0; worker < runtime.NumCPU(); worker++ {
+	////	go func(worker int) {
+	////		signer := thresholdSigners[worker%len(thresholdSigners)]
+	////		defer wg.Done()
+	////		for i := 0; i < int(workload); i++ {
+	////			signer.Sign(nil, digest)
+	////		}
+	////		//signer.Sign(nil, digest)
+	////		atomic.AddUint32(&signatureCount, workload)
+	////	}(worker)
+	////}
+	//
+	//for worker := 0; worker < threshold; worker++ {
+	//	go func(worker int) {
+	//		signer := thresholdSigners[worker]
+	//		defer wg.Done()
+	//
+	//		sig, err := signer.Sign(nil, digest)
+	//		assert.NoError(t, err)
+	//
+	//		//mu.Lock()
+	//		//totalTime += time.Since(localSignStartTime)
+	//		//mu.Unlock()
+	//
+	//		signatures[worker] = sig
+	//		signerIndices[worker] = uint16(worker + 1)
+	//	}(worker)
+	//}
+	//
+	//wg.Wait()
+	//
+	////for _, signer := range thresholdSigners {
+	////	sig, err := signer.Sign(nil, digest)
+	////	assert.NoError(t, err)
+	////	signatures = append(signatures, sig)
+	////}
+	//
+	////t.Log(">>>> Total signing took", totalTime)
+	//
+	//pk, err := thresholdSigners[0].ThresholdPK()
+	//assert.NoError(t, err)
+	//
+	//var v bls.Verifier
+	//err = v.Init(pk)
+	//assert.NoError(t, err)
+	//
+	//sig, err := v.AggregateSignatures(signatures, signerIndices)
+	//assert.NoError(t, err)
+	//
+	//t.Log(">>>> Total signing took", time.Since(signStartTime))
+
+	startSignAndAggregate := time.Now()
+	loop := 100
+
+	for i := 0; i < loop; i++ {
+		_, _, _ = signAndAggregate(t, threshold, members, shares)
+
+		//verificationStartTime := time.Now()
+		//err := v.Verify(digest, sig)
+		//assert.NoError(t, err)
+		//
+		//t.Log(">>>> Verification took", time.Since(verificationStartTime))
 	}
 
-	// Initialize them with a nil send function
-	for i, signer := range thresholdSigners {
-		signer.Init(members, n-1, nil)
-		signer.SetShareData(shares[i])
-	}
+	t.Log(">>>> Average sign and aggregate took", time.Since(startSignAndAggregate)/time.Duration(loop))
 
-	var signatures [][]byte
+	//sig, v, digest := signAndAggregate(t, threshold, members, shares)
+	//
+	//verificationStartTime := time.Now()
+	//err := v.Verify(digest, sig)
+	//assert.NoError(t, err)
 
-	// Sign a message
-	msg := []byte("Three can keep a secret, if two of them are dead.")
-	digest := sha256Digest(msg)
+	//signerIndicesCombination := combinations(uint16(n), uint16(threshold))
+	//
+	//tSigs := make([][]byte, len(signerIndicesCombination))
+	//
+	//for i, signerIndices := range signerIndicesCombination {
+	//	tempSignatures := make([][]byte, threshold)
+	//	for j, signerIndex := range signerIndices {
+	//		tempSignatures[j] = signatures[int(signerIndex)]
+	//	}
+	//
+	//	sig, err := v.AggregateSignatures(tempSignatures, signerIndices)
+	//	//
+	//	tSigs[i] = sig
+	//	fmt.Println(">>>> signerIndicesCombination", i, sig)
+	//
+	//	assert.NoError(t, err)
+	//	v.Verify(digest, sig)
+	//}
 
-	var signatureCount uint32
+	//signerIndices := make([]uint16, threshold)
+	//for i := 1; i <= threshold; i++ {
+	//	signerIndices[i-1] = uint16(i)
+	//}
+	//
+	//sig, err := v.AggregateSignatures(signatures[:threshold], signerIndices)
+	//assert.NoError(t, err)
+	//
+	//v.Verify(digest, sig)
 
-	workload := uint32(10000)
+	//sig1, err := v.AggregateSignatures([][]byte{signatures[0], signatures[1]}, []uint16{1, 2})
+	//fmt.Println(">>>> sig1", sig1)
+	//assert.NoError(t, err)
+	//
+	//err = v.Verify(digest, sig1)
+	//assert.NoError(t, err)
 
-	var wg sync.WaitGroup
-	wg.Add(runtime.NumCPU())
+	//sig2, err := v.AggregateSignatures([][]byte{signatures[0], signatures[2]}, []uint16{1, 3})
+	//fmt.Println(">>>> sig2", sig2)
+	//assert.NoError(t, err)
+	//
+	//sig3, err := v.AggregateSignatures([][]byte{signatures[1], signatures[2]}, []uint16{2, 3})
+	//fmt.Println(">>>> sig3", sig3)
+	//assert.NoError(t, err)
 
-	start = time.Now()
+	//tSigs := [][]byte{sig1}
+	//
+	//var verCount uint32
+	//
+	//wg = sync.WaitGroup{}
+	//wg.Add(runtime.NumCPU())
+	//
+	//start = time.Now()
+	//for worker := 0; worker < runtime.NumCPU(); worker++ {
+	//	go func(worker int) {
+	//		defer wg.Done()
+	//		sig := tSigs[worker%len(tSigs)]
+	//		for i := 0; i < int(workload); i++ {
+	//			v.Verify(digest, sig)
+	//		}
+	//		atomic.AddUint32(&verCount, workload)
+	//	}(worker)
+	//}
+	//
+	//wg.Wait()
 
-	for worker := 0; worker < runtime.NumCPU(); worker++ {
-		go func(worker int) {
-			signer := thresholdSigners[worker%len(thresholdSigners)]
-			defer wg.Done()
-			for i := 0; i < int(workload); i++ {
-				signer.Sign(nil, digest)
-			}
-			atomic.AddUint32(&signatureCount, workload)
-		}(worker)
-	}
-
-	wg.Wait()
-
-	fmt.Println(">>>>", int(atomic.LoadUint32(&signatureCount))/int(time.Since(start).Seconds()))
-
-	for _, signer := range thresholdSigners {
-		sig, err := signer.Sign(nil, digest)
-		assert.NoError(t, err)
-		signatures = append(signatures, sig)
-	}
-
-	pk, err := thresholdSigners[0].ThresholdPK()
-	assert.NoError(t, err)
-
-	var v bls.Verifier
-	err = v.Init(pk)
-	assert.NoError(t, err)
-
-	sig1, err := v.AggregateSignatures([][]byte{signatures[0], signatures[1]}, []uint16{1, 2})
-	assert.NoError(t, err)
-
-	sig2, err := v.AggregateSignatures([][]byte{signatures[0], signatures[2]}, []uint16{1, 3})
-	assert.NoError(t, err)
-
-	sig3, err := v.AggregateSignatures([][]byte{signatures[1], signatures[2]}, []uint16{2, 3})
-	assert.NoError(t, err)
-
-	tSigs := [][]byte{sig1, sig2, sig3}
-
-	var verCount uint32
-
-	wg = sync.WaitGroup{}
-	wg.Add(runtime.NumCPU())
-
-	start = time.Now()
-	for worker := 0; worker < runtime.NumCPU(); worker++ {
-		go func(worker int) {
-			defer wg.Done()
-			sig := tSigs[worker%len(tSigs)]
-			for i := 0; i < int(workload); i++ {
-				v.Verify(digest, sig)
-			}
-			atomic.AddUint32(&verCount, workload)
-		}(worker)
-	}
-
-	wg.Wait()
-
-	fmt.Println(">>>>", int(atomic.LoadUint32(&verCount))/int(time.Since(start).Seconds()))
-
+	//t.Log(">>>> Verification took", time.Since(verificationStartTime))
 }
 
 // example usage: go test -bench BenchmarkParallelInvocation -run=^$ -cpu=1,2,4,8,16,32,64
@@ -281,7 +373,10 @@ func BenchmarkParallelInvocation(b *testing.B) {
 	// Initialize them with a nil send function
 	for i, signer := range thresholdSigners {
 		signer.Init(members, n-1, nil)
-		signer.SetShareData(shares[i])
+		err := signer.SetShareData(shares[i])
+		if err != nil {
+			return
+		}
 	}
 
 	// Sign a message
@@ -362,7 +457,7 @@ func keygen(t TestingT, parties []MpcParty, n int) ([][]byte, time.Time) {
 	for i, p := range parties {
 		go func(i int, p MpcParty) {
 			defer wg.Done()
-			secretShareData, err := p.KeyGen(ctx, len(parties), n-1)
+			secretShareData, err := p.KeyGen(ctx, len(parties), int(math.Floor(float64(n/2)))+1)
 			shares[i] = secretShareData
 			assert.NoError(t, err)
 			assert.NotNil(t, secretShareData)
@@ -533,4 +628,91 @@ func newSigner(ca tlsgen.CA, t TestingT) *tlsgen.CertKeyPair {
 type TestingT interface {
 	Errorf(format string, args ...interface{})
 	Name() string
+}
+
+func combinations(n uint16, t uint16) [][]uint16 {
+	var ans [][]uint16
+	if t == 1 {
+		for i := uint16(1); i <= n; i++ {
+			ans = append(ans, []uint16{i})
+		}
+		return ans
+	}
+	for i := n; i >= t; i-- {
+		tem := combinations(i-1, t-1)
+		for _, v := range tem {
+			v = append(v, i)
+			ans = append(ans, v)
+		}
+	}
+	return ans
+}
+
+func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]byte) ([]byte, bls.Verifier, []byte) {
+	thresholdSigners := make([]*bls.TBLS, threshold)
+	for id := 1; id <= threshold; id++ {
+		thresholdSigners[id-1] = &bls.TBLS{
+			Logger: logger(id, t.Name()),
+			Party:  uint16(id),
+		}
+	}
+
+	// Initialize them with a nil send function
+	for i, signer := range thresholdSigners {
+		signer.Init(members, threshold, nil)
+		err := signer.SetShareData(shares[i])
+		if err != nil {
+			return nil, bls.Verifier{}, nil
+		}
+	}
+
+	// random message
+	msg, err := generateRandomBytes(50)
+	assert.NoError(t, err)
+	digest := sha256Digest(msg)
+
+	signatures := make([][]byte, threshold)
+	signerIndices := make([]uint16, threshold)
+
+	var wg sync.WaitGroup
+
+	wg.Add(threshold)
+
+	for worker := 0; worker < threshold; worker++ {
+		go func(worker int) {
+			signer := thresholdSigners[worker]
+			defer wg.Done()
+
+			sig, err := signer.Sign(nil, digest)
+			assert.NoError(t, err)
+
+			signatures[worker] = sig
+			signerIndices[worker] = uint16(worker + 1)
+		}(worker)
+	}
+
+	wg.Wait()
+
+	pk, err := thresholdSigners[0].ThresholdPK()
+	assert.NoError(t, err)
+
+	var v bls.Verifier
+	err = v.Init(pk)
+	assert.NoError(t, err)
+
+	sig, err := v.AggregateSignatures(signatures, signerIndices)
+	assert.NoError(t, err)
+
+	return sig, v, digest
+}
+
+func generateRandomBytes(length int) ([]byte, error) {
+	randomBytes := make([]byte, length)
+
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return randomBytes, nil
 }

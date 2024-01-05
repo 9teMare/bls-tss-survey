@@ -129,7 +129,7 @@ func (tbls *TBLS) OnMsg(msgBytes []byte, from uint16, _ bool) {
 
 	switch msgBytes[0] {
 	case shareDistribution:
-		tbls.Logger.Infof("Got share distribution from %d", from)
+		//tbls.Logger.Infof("Got share distribution from %d", from)
 		if _, exists := tbls.shares[from]; exists {
 			tbls.Logger.Warnf("Already got share from %d", from)
 			return
@@ -138,7 +138,7 @@ func (tbls *TBLS) OnMsg(msgBytes []byte, from uint16, _ bool) {
 		tbls.shares[from] = c.NewZrFromBytes(msgBytes[1:])
 		tbls.signal.Signal()
 	case commitPK:
-		tbls.Logger.Infof("Got commitment from %d", from)
+		//tbls.Logger.Infof("Got commitment from %d", from)
 		if _, exists := tbls.commitments[from]; exists {
 			tbls.Logger.Warnf("Already got commitment from %d", from)
 			return
@@ -159,9 +159,9 @@ func (tbls *TBLS) OnMsg(msgBytes []byte, from uint16, _ bool) {
 		}
 
 		tbls.publicKeysOfParties[from] = msgBytes[1:]
-		expectedCommitment := sha256.Sum256(tbls.publicKeysOfParties[from])
-		tbls.Logger.Infof("Got public key from %d: %s, expecting to receive commitment %s",
-			from, base64.StdEncoding.EncodeToString(msgBytes[1:]), base64.StdEncoding.EncodeToString(expectedCommitment[:]))
+		//expectedCommitment := sha256.Sum256(tbls.publicKeysOfParties[from])
+		//tbls.Logger.Infof("Got public key from %d: %s, expecting to receive commitment %s",
+		//	from, base64.StdEncoding.EncodeToString(msgBytes[1:]), base64.StdEncoding.EncodeToString(expectedCommitment[:]))
 		tbls.signal.Signal()
 	default:
 		tbls.Logger.Warnf("Got message with invalid tag (%d) from %d", msgBytes[0], from)
@@ -337,7 +337,7 @@ func (tbls *TBLS) shareDistribution(ctx context.Context, shares Shares) {
 }
 
 func (tbls *TBLS) revealPhase(ctx context.Context, pk []byte) {
-	tbls.Logger.Infof("Broadcasting public key: %s", base64.StdEncoding.EncodeToString(pk))
+	//tbls.Logger.Infof("Broadcasting public key: %s", base64.StdEncoding.EncodeToString(pk))
 	tbls.sendMsg(encodeMsg(revealPK, pk), true, 0)
 
 	tbls.waitForDeCommitmentDistribution(ctx)
@@ -347,7 +347,7 @@ func (tbls *TBLS) commitPhase(ctx context.Context, pk []byte) {
 	digest := sha256.Sum256(pk)
 	commitment := digest[:]
 
-	tbls.Logger.Infof("Broadcasting commitment: %s", base64.StdEncoding.EncodeToString(commitment))
+	//tbls.Logger.Infof("Broadcasting commitment: %s", base64.StdEncoding.EncodeToString(commitment))
 
 	tbls.sendMsg(encodeMsg(commitPK, commitment), true, 0)
 
