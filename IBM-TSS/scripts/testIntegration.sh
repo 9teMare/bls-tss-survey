@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+cd IBM-TSS
+
 cd test
 
 cp go.mod go.mod.bck

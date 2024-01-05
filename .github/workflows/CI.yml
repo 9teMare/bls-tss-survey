@@ -9,14 +9,14 @@ jobs:
         uses: actions/checkout@v3
       - name: library tests
         run: |
-          bash bls-tss-survey/scripts/testLib.sh
+          bash IBM-TSS/scripts/testLib.sh
       - name: binance ECDSA
         run: |
-          bash bls-tss-survey/scripts/testBinanceECDSA.sh
+          bash IBM-TSS/scripts/testBinanceECDSA.sh
       - name: binance EDDSA
         run: |
-          bash bls-tss-survey/scripts/testBinanceEDDSA.sh
+          bash IBM-TSS/scripts/testBinanceEDDSA.sh
       - name: integration tests
         run: |
-          bash bls-tss-survey/scripts/testIntegration.sh
+          bash IBM-TSS/scripts/testIntegration.sh
 
