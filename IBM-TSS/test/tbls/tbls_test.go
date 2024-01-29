@@ -121,7 +121,7 @@ func TestBenchmark(t *testing.T) {
 	var listeners []net.Listener
 	var stopFuncs []func()
 
-	n := 3
+	n := 5
 	threshold := int(math.Floor(float64(n/2)) + 1)
 
 	t.Logf(">>>> n = %d, t = %d", n, threshold)
@@ -147,6 +147,8 @@ func TestBenchmark(t *testing.T) {
 
 	// DKG
 	shares, start := keygen(t, parties, n)
+
+	fmt.Println(">>>> shares", len(shares))
 
 	elapsed := time.Since(start)
 	t.Log(">>>> DKG took", elapsed)
@@ -238,11 +240,20 @@ func TestBenchmark(t *testing.T) {
 	//
 	//t.Log(">>>> Total signing took", time.Since(signStartTime))
 
-	startSignAndAggregate := time.Now()
 	loop := 100
 
+	totalSignerInitTime := time.Duration(0)
+	totalSignTime := time.Duration(0)
+	totalVerifierCreationTime := time.Duration(0)
+	totalAggregateTime := time.Duration(0)
+
 	for i := 0; i < loop; i++ {
-		_, _, _ = signAndAggregate(t, threshold, members, shares)
+		_, _, _, signerInitEndTime, signTime, verifierCreationEndTime, aggregateTime := signAndAggregate(t, threshold, members, shares)
+
+		totalSignerInitTime += signerInitEndTime
+		totalSignTime += signTime
+		totalVerifierCreationTime += verifierCreationEndTime
+		totalAggregateTime += aggregateTime
 
 		//verificationStartTime := time.Now()
 		//err := v.Verify(digest, sig)
@@ -251,7 +262,12 @@ func TestBenchmark(t *testing.T) {
 		//t.Log(">>>> Verification took", time.Since(verificationStartTime))
 	}
 
-	t.Log(">>>> Average sign and aggregate took", time.Since(startSignAndAggregate)/time.Duration(loop))
+	t.Log(">>>> Average signer init time took", totalSignerInitTime/time.Duration(loop))
+	t.Log(">>>> Average sign took", totalSignTime/time.Duration(loop))
+	t.Log(">>>> Average verifier creation time took", totalVerifierCreationTime/time.Duration(loop))
+	t.Log(">>>> Average aggregate took", totalAggregateTime/time.Duration(loop))
+
+	//t.Log(">>>> Average sign and aggregate took", totalTime)
 
 	//sig, v, digest := signAndAggregate(t, threshold, members, shares)
 	//
@@ -648,7 +664,9 @@ func combinations(n uint16, t uint16) [][]uint16 {
 	return ans
 }
 
-func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]byte) ([]byte, bls.Verifier, []byte) {
+func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]byte) ([]byte, bls.Verifier, []byte, time.Duration, time.Duration, time.Duration, time.Duration) {
+
+	signerInitStartTime := time.Now()
 	thresholdSigners := make([]*bls.TBLS, threshold)
 	for id := 1; id <= threshold; id++ {
 		thresholdSigners[id-1] = &bls.TBLS{
@@ -662,9 +680,11 @@ func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]
 		signer.Init(members, threshold, nil)
 		err := signer.SetShareData(shares[i])
 		if err != nil {
-			return nil, bls.Verifier{}, nil
+			return nil, bls.Verifier{}, nil, 0, 0, 0, 0
 		}
 	}
+
+	signerInitTime := time.Since(signerInitStartTime)
 
 	// random message
 	msg, err := generateRandomBytes(50)
@@ -678,6 +698,7 @@ func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]
 
 	wg.Add(threshold)
 
+	signStartTime := time.Now()
 	for worker := 0; worker < threshold; worker++ {
 		go func(worker int) {
 			signer := thresholdSigners[worker]
@@ -695,15 +716,20 @@ func signAndAggregate(t *testing.T, threshold int, members []uint16, shares [][]
 
 	pk, err := thresholdSigners[0].ThresholdPK()
 	assert.NoError(t, err)
+	signTime := time.Since(signStartTime)
 
+	verifierCreationStartTime := time.Now()
 	var v bls.Verifier
 	err = v.Init(pk)
 	assert.NoError(t, err)
+	verifierCreationTime := time.Since(verifierCreationStartTime)
 
+	aggregateStartTime := time.Now()
 	sig, err := v.AggregateSignatures(signatures, signerIndices)
 	assert.NoError(t, err)
+	aggregateTime := time.Since(aggregateStartTime)
 
-	return sig, v, digest
+	return sig, v, digest, signerInitTime, signTime, verifierCreationTime, aggregateTime
 }
 
 func generateRandomBytes(length int) ([]byte, error) {
