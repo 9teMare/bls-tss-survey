@@ -9,11 +9,14 @@ package bls_sig
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"github.com/stretchr/testify/assert"
 	"math"
+	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/coinbase/kryptology/pkg/core/curves/native/bls12381"
 )
@@ -252,7 +255,14 @@ func TestBasicThresholdKeygenBadInputs(t *testing.T) {
 func TestBasicThresholdKeygen(t *testing.T) {
 	bls := NewSigBasic()
 
-	n := uint(15)
+	nEnv := os.Getenv("N")
+	N, err := strconv.Atoi(nEnv)
+	if err != nil || N <= 0 {
+		N = 3
+	}
+
+	n := uint(N)
+
 	threshold := uint(math.Floor(float64(n/2)) + 1)
 
 	t.Logf(">>>> Usual: Short PK, Long Signature")
@@ -269,8 +279,6 @@ func TestBasicThresholdKeygen(t *testing.T) {
 	}
 
 	t.Log("Keygen took", time.Since(keygenStart))
-
-	//startSignAndAggregate := time.Now()
 
 	loop := 100
 	totalSignTime := time.Duration(0)
@@ -474,10 +482,6 @@ func signAndAggregate(t *testing.T, bls *SigBasic, pk *PublicKey, threshold int,
 		t.Errorf("CombineSignatures failed: %v", err)
 	}
 	aggregateTime := time.Since(aggregateStartTime)
-
-	//if res, _ := bls.Verify(pk, digest, sig); !res {
-	//	t.Errorf("Combined signature does not verify")
-	//}
 
 	return signTime, aggregateTime
 }
