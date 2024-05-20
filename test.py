@@ -21,7 +21,22 @@ def run_coinbase(n: int):
     )
 
 
+def helper():
+    print("Usage: python3 test.py lib=<library> n=<threshold>")
+    print("library: ibm or coinbase")
+    print("threshold: odd integer > 2")
+
+
 if __name__ == "__main__":
+    if (
+        len(sys.argv) != 3
+        or not sys.argv[1].startswith("lib=")
+        or not sys.argv[2].startswith("n=")
+        or sys.argv[1] == "-h"
+    ):
+        helper()
+        sys.exit(1)
+
     lib = sys.argv[1].split("=")[1]  # ibm or coinbase
     if lib != "ibm" and lib != "coinbase":
         print("Invalid library name, must be 'ibm' or 'coinbase'")
