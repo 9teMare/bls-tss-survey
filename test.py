@@ -21,15 +21,24 @@ def run_coinbase(n: int):
     )
 
 
+def run_neo(n: int):
+    print(f"Runing NEO BLS-TSS benchmark: n={n}, t={math.ceil(int(n) / 2)}")
+    subprocess.run(
+        f"cd tpke && N={n} go test -run ^TestThresholdSignature$ -v",
+        shell=True,
+        check=True,
+    )
+
+
 def helper():
     print("Usage: python3 test.py lib=<library> n=<threshold>")
-    print("library: ibm or coinbase")
+    print("library: ibm / coinbase / neo")
     print("threshold: odd integer > 2")
 
 
 if __name__ == "__main__":
     if (
-        len(sys.argv) != 3
+        len(sys.argv) < 3
         or not sys.argv[1].startswith("lib=")
         or not sys.argv[2].startswith("n=")
         or sys.argv[1] == "-h"
@@ -37,9 +46,9 @@ if __name__ == "__main__":
         helper()
         sys.exit(1)
 
-    lib = sys.argv[1].split("=")[1]  # ibm or coinbase
-    if lib != "ibm" and lib != "coinbase":
-        print("Invalid library name, must be 'ibm' or 'coinbase'")
+    lib = sys.argv[1].split("=")[1]  # ibm, coinbase or neo
+    if lib != "ibm" and lib != "coinbase" and lib != "neo":
+        print("Invalid library name, must be 'ibm', 'coinbase' or 'neo'")
         sys.exit(1)
 
     n = sys.argv[2].split("=")[1]
@@ -52,5 +61,7 @@ if __name__ == "__main__":
 
     if lib == "ibm":
         run_ibm(int(n))
-    else:
+    if lib == "coinbase":
         run_coinbase(int(n))
+    else:
+        run_neo(int(n))

@@ -1,6 +1,7 @@
 package tpke
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 
@@ -85,6 +86,9 @@ func AggregateAndVerifySig(pk *PublicKey, msg []byte, threshold int, inputs map[
 			m[i] = matrix[v[i]]
 			s[i] = shares[v[i]]
 		}
+		fmt.Printf("m: %v\n", m)
+		fmt.Printf("s: %v\n", s)
+
 		sig := aggregateShares(m, s, scaler)
 		if pk.VerifySig(msg, sig) {
 			return sig, nil
@@ -92,6 +96,60 @@ func AggregateAndVerifySig(pk *PublicKey, msg []byte, threshold int, inputs map[
 	}
 
 	return nil, NewSigAggregationError()
+}
+
+func Aggregate(pk *PublicKey, msg []byte, threshold int, inputs map[int]*SignatureShare, scaler int) (*Signature, [][]int, []*SignatureShare, error) {
+
+	if len(inputs) < threshold {
+		return nil, nil, nil, NewSigNotEnoughShareError()
+	}
+
+	matrix := make([][]int, len(inputs))           // size=len(inputs)*threshold, including all rows
+	shares := make([]*SignatureShare, len(inputs)) // size=len(inputs), including all shares
+
+	// Be aware of a random order of sig shares
+	i := 0
+	for index, v := range inputs {
+		row := make([]int, threshold)
+		for j := 0; j < threshold; j++ {
+			row[j] = int(math.Pow(float64(index), float64(j)))
+		}
+		matrix[i] = row
+		shares[i] = v
+		i++
+	}
+
+	m := make([][]int, threshold)           // size=threshold*threshold, only seleted rows
+	s := make([]*SignatureShare, threshold) // size=threshold, only seleted shares
+	for i := 0; i < threshold; i++ {
+		m[i] = matrix[i]
+		s[i] = shares[i]
+	}
+	sig := aggregateShares(m, s, scaler)
+	if pk.VerifySig(msg, sig) {
+		return sig, matrix, shares, nil
+	}
+
+	return nil, nil, nil, NewSigAggregationError()
+}
+
+func Verify(pk *PublicKey, msg []byte, threshold int, inputs map[int]*SignatureShare, scaler int, matrix [][]int, shares []*SignatureShare) (bool, []*Signature) {
+	combs := getCombs(len(inputs), threshold)
+	sigs := make([]*Signature, 0)
+	for _, v := range combs {
+		m := make([][]int, threshold)           // size=threshold*threshold, only seleted rows
+		s := make([]*SignatureShare, threshold) // size=threshold, only seleted shares
+		for i := 0; i < len(v); i++ {
+			m[i] = matrix[v[i]]
+			s[i] = shares[v[i]]
+		}
+		sig := aggregateShares(m, s, scaler)
+		sigs = append(sigs, sig)
+		if !pk.VerifySig(msg, sig) {
+			return false, nil
+		}
+	}
+	return true, sigs
 }
 
 func aggregateShares(matrix [][]int, shares []*SignatureShare, scaler int) *Signature {

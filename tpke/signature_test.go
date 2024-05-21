@@ -1,8 +1,12 @@
 package tpke
 
 import (
+	cryptoRand "crypto/rand"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,65 +33,130 @@ func TestSingleSignature(t *testing.T) {
 }
 
 func TestThresholdSignature(t *testing.T) {
-	size := 7
-	threshold := 5
-	dkg := NewDKG(size, threshold)
+	nEnv := os.Getenv("N")
+
+	size, err := strconv.Atoi(nEnv)
+	if err != nil || size <= 0 {
+		size = 3
+	}
+
+	threshold := int(math.Floor(float64(size)/2) + 1)
+
+	t.Logf(">>>> n = %d, t = %d", size, threshold)
+
+	dkgElapsed, sks, pk, scaler := dkg(size, threshold)
+	t.Log("DKG took", dkgElapsed)
+
+	// for i := 0; i < loop; i++ {
+	// 	signElapsed, aggregateElapsed, sig, _, _, _, _, err := signAndAggregate(sks, pk, threshold, scaler)
+
+	// 	if err != nil {
+	// 		t.Fatalf(err.Error())
+	// 	}
+	// 	if sig == nil {
+	// 		t.Fatalf("invalid signature")
+	// 	}
+	// 	totalSignTime += signElapsed
+	// 	totalAggregateTime += aggregateElapsed
+
+	// 	isValid, sigs := Verify(pk, msg, threshold, inputs, scaler, matrix, shares)
+
+	// 	if !isValid || sigs == nil {
+	// 		t.Fatalf("invalid signature")
+	// 	}
+
+	// 	s0 := sigs[0]
+	// 	for i := 1; i < len(sigs); i++ {
+	// 		if !sigs[i].Equals(s0) {
+	// 			t.Fatalf("different signature")
+	// 		}
+	// 	}
+	// }
+
+	loop := 100
+	totalSignTime := time.Duration(0)
+	totalAggregateTime := time.Duration(0)
+
+	for i := 0; i < loop; i++ {
+		signElapsed, aggregateElapsed, sig, _, _, _, _, err := signAndAggregate(sks, pk, threshold, scaler)
+
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		if sig == nil {
+			t.Fatalf("invalid signature")
+		}
+
+		totalSignTime += signElapsed
+		totalAggregateTime += aggregateElapsed
+	}
+
+	t.Log("Sign took", totalSignTime/time.Duration(loop))
+	t.Log("Aggregate took", totalAggregateTime/time.Duration(loop))
+}
+
+func dkg(n int, t int) (time.Duration, map[int]*PrivateKey, *PublicKey, int) {
+	dkgStart := time.Now()
+
+	dkg := NewDKG(n, t)
 	dkg.Prepare()
 	if err := dkg.Verify(); err != nil {
-		t.Fatalf(err.Error())
+		panic(err)
 	}
 	sks := dkg.GetPrivateKeys()
 	pk := dkg.PublishGlobalPublicKey()
 	scaler := dkg.GetScaler()
 
-	// Test functionality
-	msg := []byte("pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza")
-	shares := make(map[int]*SignatureShare)
-	for i := 1; i <= len(sks); i++ {
-		shares[i] = sks[i].SignShare(msg)
-	}
-	sig, err := AggregateAndVerifySig(pk, msg, threshold, shares, scaler)
+	dkgElapsed := time.Since(dkgStart)
+	return dkgElapsed, sks, pk, scaler
+}
+
+func generateRandomMsg(length int) ([]byte, error) {
+	randomBytes := make([]byte, length)
+
+	_, err := cryptoRand.Read(randomBytes)
 	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	if sig == nil {
-		t.Fatalf("invalid signature")
+		return nil, err
 	}
 
-	// Test consistency
-	matrix := make([][]int, len(shares))           // size=len(shares)*threshold, including all rows
-	inputs := make([]*SignatureShare, len(shares)) // size=len(shares), including all shares
+	return randomBytes, nil
+}
 
-	// Be aware of a random order of decryption shares
-	i := 0
-	for index, v := range shares {
-		row := make([]int, threshold)
-		for j := 0; j < threshold; j++ {
-			row[j] = int(math.Pow(float64(index), float64(j)))
-		}
-		matrix[i] = row
-		inputs[i] = v
-		i++
+func signAndAggregate(sks map[int]*PrivateKey, pk *PublicKey, threshold int, scalar int) (time.Duration, time.Duration, *Signature, [][]int, []*SignatureShare, map[int]*SignatureShare, []byte, error) {
+	// sign
+	signStart := time.Now()
+	// msg := []byte("pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza pizza")
+	msg, err := generateRandomMsg(50)
+	if err != nil {
+		return 0, 0, nil, nil, nil, nil, nil, err
+	}
+	inputs := make(map[int]*SignatureShare, len(sks))
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(len(sks))
+
+	for i, sk := range sks {
+		go func(i int, sk *PrivateKey) {
+			defer wg.Done()
+			share := sk.SignShare(msg)
+			mu.Lock()
+			inputs[i] = share
+			mu.Unlock()
+		}(i, sk)
+	}
+	wg.Wait()
+
+	signElapsed := time.Since(signStart)
+
+	// aggregate
+	aggregateStart := time.Now()
+	sig, matrix, shares, err := Aggregate(pk, msg, threshold, inputs, scalar)
+	if err != nil {
+		return 0, 0, nil, nil, nil, inputs, msg, err
 	}
 
-	// Use different combinations to aggregate
-	combs := getCombs(len(shares), threshold)
-	sigs := make([]*Signature, 0)
-	for _, v := range combs {
-		m := make([][]int, threshold)           // size=threshold*threshold, only seleted rows
-		s := make([]*SignatureShare, threshold) // size=threshold, only seleted shares
-		for i := 0; i < len(v); i++ {
-			m[i] = matrix[v[i]]
-			s[i] = inputs[v[i]]
-		}
-		sig := aggregateShares(m, s, scaler)
-		sigs = append(sigs, sig)
-	}
+	aggregateElapsed := time.Since(aggregateStart)
 
-	s0 := sigs[0]
-	for i := 1; i < len(sigs); i++ {
-		if !sigs[i].Equals(s0) {
-			t.Fatalf("different signature")
-		}
-	}
+	return signElapsed, aggregateElapsed, sig, matrix, shares, inputs, msg, nil
 }

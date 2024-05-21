@@ -269,7 +269,7 @@ func TestBasicThresholdKeygen(t *testing.T) {
 	t.Logf(">>>> n = %d, t = %d", n, threshold)
 
 	keygenStart := time.Now()
-	pk, sks, err := bls.ThresholdKeygen(threshold, n)
+	_, sks, err := bls.ThresholdKeygen(threshold, n)
 
 	if err != nil {
 		t.Errorf("ThresholdKeygen failed")
@@ -285,7 +285,7 @@ func TestBasicThresholdKeygen(t *testing.T) {
 	totalAggregateTime := time.Duration(0)
 
 	for i := 0; i < loop; i++ {
-		signTime, aggregateTime := signAndAggregate(t, bls, pk, int(threshold), sks)
+		signTime, aggregateTime := signAndAggregate(t, bls, int(threshold), sks)
 		totalSignTime += signTime
 		totalAggregateTime += aggregateTime
 	}
@@ -451,7 +451,7 @@ func TestThresholdSignTooHighAndLow(t *testing.T) {
 	}
 }
 
-func signAndAggregate(t *testing.T, bls *SigBasic, pk *PublicKey, threshold int, shares []*SecretKeyShare) (time.Duration, time.Duration) {
+func signAndAggregate(t *testing.T, bls *SigBasic, threshold int, shares []*SecretKeyShare) (time.Duration, time.Duration) {
 	msg, err := generateRandomMsg(50)
 
 	digest := sha256Digest(msg)
