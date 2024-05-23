@@ -61,7 +61,10 @@ if __name__ == "__main__":
 
     if lib == "ibm":
         run_ibm(int(n))
-    if lib == "coinbase":
+    elif lib == "coinbase":
         run_coinbase(int(n))
-    else:
+    elif lib == "neo":
         run_neo(int(n))
+    else:
+        helper()
+        sys.exit(1)
